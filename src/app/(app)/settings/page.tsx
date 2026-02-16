@@ -5,174 +5,168 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Settings as SettingsIcon, Copy, Check, UserPlus } from 'lucide-react';
+import { Settings as SettingsIcon } from 'lucide-react';
 
 export default function SettingsPage() {
   const [org, setOrg] = useState<any>(null);
-  const [settings, setSettings] = useState({
-    leadCap: 150,
-    cooldownDays: 7,
-    commissionPct: 25,
-    baseSalary: 4000,
-    podThreshold: 4000,
-  });
+  const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/organization').then(r => r.json()).then(data => {
-      setOrg(data);
-      if (data.settings) {
-        setSettings({
-          leadCap: data.settings.leadCap || 150,
-          cooldownDays: data.settings.cooldownDays || 7,
-          commissionPct: data.settings.commissionPct || 25,
-          baseSalary: data.settings.baseSalary || 4000,
-          podThreshold: data.settings.podThreshold || 4000,
-        });
-      }
-    });
-    fetch('/api/users').then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setUsers(data);
-    });
+    fetch('/api/organization').then(r => r.json()).then(d => { setOrg(d); setForm(d?.settings || {}); });
   }, []);
 
-  const handleSave = async () => {
+  const save = async () => {
     setSaving(true);
     await fetch('/api/organization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: { ...org?.settings, ...settings } }),
+      body: JSON.stringify({ settings: form }),
     });
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   };
 
-  const copyInviteCode = () => {
-    if (org?.inviteCode) {
-      navigator.clipboard.writeText(org.inviteCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleRoleChange = async (userId: string, role: string) => {
-    await fetch(`/api/users/${userId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role }),
-    });
-    const res = await fetch('/api/users');
-    const data = await res.json();
-    if (Array.isArray(data)) setUsers(data);
-  };
+  if (!org) return <div className="p-6">Loading...</div>;
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold flex items-center gap-2"><SettingsIcon className="h-6 w-6" /> Settings</h1>
+      <div className="flex items-center gap-3">
+        <SettingsIcon className="h-6 w-6" />
+        <h1 className="text-2xl font-bold">Settings</h1>
+      </div>
 
-      {/* Invite Code */}
       <Card>
-        <CardHeader><CardTitle className="text-lg">Organization</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Lead Pool</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label>Organization Name</Label>
-            <p className="text-lg font-medium">{org?.name || 'Loading...'}</p>
-          </div>
-          <div>
-            <Label>Invite Code</Label>
-            <div className="flex items-center gap-2 mt-1">
-              <code className="bg-muted px-3 py-2 rounded text-sm font-mono">{org?.inviteCode || '...'}</code>
-              <Button variant="outline" size="sm" onClick={copyInviteCode}>
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Share this code with new team members to join your organization.</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Lead Pool Settings */}
-      <Card>
-        <CardHeader><CardTitle className="text-lg">Lead Pool</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <Label>Lead Cap per Rep</Label>
-              <Input type="number" value={settings.leadCap} onChange={e => setSettings({ ...settings, leadCap: parseInt(e.target.value) || 0 })} />
-              <p className="text-xs text-muted-foreground mt-1">Max active leads per rep</p>
+              <Label>Lead Cap (per rep)</Label>
+              <Input type="number" value={form.leadCap || 150} onChange={e => setForm({ ...form, leadCap: Number(e.target.value) })} />
+              <p className="text-xs text-muted-foreground mt-1">Max active prospects per rep (stages 1-6)</p>
             </div>
             <div>
               <Label>Cooldown Days</Label>
-              <Input type="number" value={settings.cooldownDays} onChange={e => setSettings({ ...settings, cooldownDays: parseInt(e.target.value) || 0 })} />
-              <p className="text-xs text-muted-foreground mt-1">Days before released lead is available</p>
+              <Input type="number" value={form.cooldownDays || 7} onChange={e => setForm({ ...form, cooldownDays: Number(e.target.value) })} />
+              <p className="text-xs text-muted-foreground mt-1">Days before released lead can be reclaimed</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Commission Settings */}
       <Card>
-        <CardHeader><CardTitle className="text-lg">Commission & Compensation</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Inactive Customer Detection</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <Label>Warning Days</Label>
+              <Input type="number" value={form.inactiveWarningDays || 30} onChange={e => setForm({ ...form, inactiveWarningDays: Number(e.target.value) })} />
+              <p className="text-xs text-muted-foreground mt-1">Days with no activity before warning</p>
+            </div>
+            <div>
+              <Label>Auto-move to Inactive Days</Label>
+              <Input type="number" value={form.inactiveAutoMoveDays || 60} onChange={e => setForm({ ...form, inactiveAutoMoveDays: Number(e.target.value) })} />
+              <p className="text-xs text-muted-foreground mt-1">Days before auto-moving to Inactive stage</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Commission</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-3 gap-4">
             <div>
               <Label>Commission %</Label>
-              <Input type="number" value={settings.commissionPct} onChange={e => setSettings({ ...settings, commissionPct: parseInt(e.target.value) || 0 })} />
+              <Input type="number" value={form.commissionPct || 25} onChange={e => setForm({ ...form, commissionPct: Number(e.target.value) })} />
             </div>
             <div>
               <Label>Base Salary (monthly)</Label>
-              <Input type="number" value={settings.baseSalary} onChange={e => setSettings({ ...settings, baseSalary: parseInt(e.target.value) || 0 })} />
+              <Input type="number" value={form.baseSalary || 4000} onChange={e => setForm({ ...form, baseSalary: Number(e.target.value) })} />
             </div>
             <div>
-              <Label>Pod Threshold (weekly GP)</Label>
-              <Input type="number" value={settings.podThreshold} onChange={e => setSettings({ ...settings, podThreshold: parseInt(e.target.value) || 0 })} />
-              <p className="text-xs text-muted-foreground mt-1">GP/week for pod eligibility</p>
+              <Label>Commission Threshold (weekly GP)</Label>
+              <Input type="number" value={form.commissionThreshold || 4000} onChange={e => setForm({ ...form, commissionThreshold: Number(e.target.value) })} />
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <Label>Support Staff Cost (monthly)</Label>
+              <Input type="number" value={form.supportStaffCost || 1000} onChange={e => setForm({ ...form, supportStaffCost: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label>Trailing Average Weeks</Label>
+              <Input type="number" value={form.trailingAvgWeeks || 12} onChange={e => setForm({ ...form, trailingAvgWeeks: Number(e.target.value) })} />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave} disabled={saving} size="lg">
-        {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
-      </Button>
-
-      {/* Team Members */}
       <Card>
-        <CardHeader><CardTitle className="text-lg">Team Members</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Performance Benchmarks</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {users.map((u: any) => (
-              <div key={u._id} className="flex items-center justify-between p-3 rounded-lg border">
+            {(form.benchmarks || []).map((b: any, i: number) => (
+              <div key={i} className="grid grid-cols-5 gap-2 items-center">
+                <div className="text-sm font-medium">Month {b.month}</div>
                 <div>
-                  <p className="font-medium text-sm">{u.name}</p>
-                  <p className="text-xs text-muted-foreground">{u.email}</p>
+                  <Label className="text-xs">Calls/day</Label>
+                  <Input type="number" value={b.callsPerDay} onChange={e => {
+                    const benchmarks = [...(form.benchmarks || [])];
+                    benchmarks[i] = { ...benchmarks[i], callsPerDay: Number(e.target.value) };
+                    setForm({ ...form, benchmarks });
+                  }} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={u.role}
-                    onChange={(e) => handleRoleChange(u._id, e.target.value)}
-                    className="text-sm border rounded px-2 py-1"
-                  >
-                    <option value="rep">Rep</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <Badge variant="secondary">Stage {u.stage}</Badge>
+                <div>
+                  <Label className="text-xs">Talk time (min)</Label>
+                  <Input type="number" value={b.talkTimeMinutes} onChange={e => {
+                    const benchmarks = [...(form.benchmarks || [])];
+                    benchmarks[i] = { ...benchmarks[i], talkTimeMinutes: Number(e.target.value) };
+                    setForm({ ...form, benchmarks });
+                  }} />
+                </div>
+                <div>
+                  <Label className="text-xs">Monthly GP</Label>
+                  <Input type="number" value={b.monthlyGP} onChange={e => {
+                    const benchmarks = [...(form.benchmarks || [])];
+                    benchmarks[i] = { ...benchmarks[i], monthlyGP: Number(e.target.value) };
+                    setForm({ ...form, benchmarks });
+                  }} />
+                </div>
+                <div>
+                  <Label className="text-xs">Weekly GP</Label>
+                  <Input type="number" value={b.weeklyGP} onChange={e => {
+                    const benchmarks = [...(form.benchmarks || [])];
+                    benchmarks[i] = { ...benchmarks[i], weeklyGP: Number(e.target.value) };
+                    setForm({ ...form, benchmarks });
+                  }} />
                 </div>
               </div>
             ))}
-            {users.length === 0 && (
-              <p className="text-sm text-muted-foreground">No team members yet. Share the invite code to add reps.</p>
-            )}
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Integrations</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg border border-dashed text-center">
+              <p className="font-medium">Email Sync</p>
+              <p className="text-sm text-muted-foreground">Gmail / Outlook</p>
+              <p className="text-xs text-muted-foreground mt-2">Coming Soon</p>
+            </div>
+            <div className="p-4 rounded-lg border border-dashed text-center">
+              <p className="font-medium">VoIP / Dialer</p>
+              <p className="text-sm text-muted-foreground">RingCentral, Aircall, Dialpad</p>
+              <p className="text-xs text-muted-foreground mt-2">Coming Soon</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button onClick={save} disabled={saving} className="w-full">
+        {saving ? 'Saving...' : 'Save Settings'}
+      </Button>
     </div>
   );
 }

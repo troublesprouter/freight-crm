@@ -1,79 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Activity from '@/lib/models/Activity';
-import Load from '@/lib/models/Load';
 import Company from '@/lib/models/Company';
+import Load from '@/lib/models/Load';
+import User from '@/lib/models/User';
 import { requireSession } from '@/lib/session';
 
-// GET /api/metrics?repId=xxx&period=day|week|month
 export async function GET(req: NextRequest) {
-  try {
-    const session = await requireSession();
-    await dbConnect();
-    const { searchParams } = new URL(req.url);
-    const repId = searchParams.get('repId') || session.user.id;
-    const period = searchParams.get('period') || 'day';
+  const session = await requireSession();
+  await dbConnect();
+  const url = new URL(req.url);
+  const repId = url.searchParams.get('repId') || (session.user as any).id;
 
-    const now = new Date();
-    let startDate: Date;
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
 
-    switch (period) {
-      case 'day':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case 'week':
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - now.getDay());
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      default:
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    }
+  // Today's calls
+  const todayActivities = await Activity.find({
+    repId,
+    type: { $in: ['call_outbound', 'call_inbound'] },
+    timestamp: { $gte: startOfDay },
+  }).lean();
 
-    const [calls, allActivities, loads, poolCount] = await Promise.all([
-      // Call count
-      Activity.countDocuments({
-        repId,
-        organizationId: session.user.organizationId,
-        type: 'call',
-        timestamp: { $gte: startDate },
-      }),
-      // All activities for talk time
-      Activity.find({
-        repId,
-        organizationId: session.user.organizationId,
-        type: 'call',
-        timestamp: { $gte: startDate },
-      }).select('durationSeconds').lean(),
-      // GP from loads
-      Load.find({
-        repId,
-        organizationId: session.user.organizationId,
-        pickupDate: { $gte: startDate },
-      }).select('grossProfit').lean(),
-      // Pool count
-      Company.countDocuments({
-        ownerRepId: repId,
-        organizationId: session.user.organizationId,
-      }),
-    ]);
+  const callsToday = todayActivities.length;
+  const talkTimeToday = Math.round(todayActivities.reduce((sum, a) => sum + (a.durationSeconds || 0), 0) / 60);
 
-    const talkTimeSeconds = allActivities.reduce((sum: number, a: any) => sum + (a.durationSeconds || 0), 0);
-    const grossProfit = loads.reduce((sum: number, l: any) => sum + (l.grossProfit || 0), 0);
+  // GP this week
+  const weekLoads = await Load.find({ repId, pickupDate: { $gte: startOfWeek } }).lean();
+  const gpThisWeek = weekLoads.reduce((sum, l) => sum + (l.grossProfit || 0), 0);
 
-    return NextResponse.json({
-      calls,
-      talkTimeSeconds,
-      talkTimeMinutes: Math.round(talkTimeSeconds / 60),
-      grossProfit,
-      poolCount,
-      period,
-      startDate,
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  // Active prospects count (stages 1-6)
+  const user = await User.findById(repId).lean();
+  const activeProspects = await Company.countDocuments({
+    ownerRepId: repId,
+    status: { $in: ['new_researching', 'cold_outreach', 'engaged', 'qualifying', 'quoting', 'onboarding'] },
+  });
+
+  return NextResponse.json({
+    callsToday,
+    talkTimeToday,
+    gpThisWeek,
+    activeProspects,
+    leadCap: (user as any)?.leadCap || 150,
+  });
 }

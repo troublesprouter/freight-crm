@@ -6,27 +6,32 @@ import { useSession, signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
+  Kanban,
   Building2,
   Snowflake,
   Users,
-  UserCheck,
   TrendingUp,
   Settings,
   LogOut,
   DollarSign,
+  Filter,
+  ListChecks,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 
 const repLinks = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/cold-bucket', label: 'Cold Bucket', icon: Snowflake },
+  { href: '/pipeline', label: 'Pipeline', icon: Kanban },
+  { href: '/prospects', label: 'Prospect Pool', icon: Snowflake },
+  { href: '/tasks', label: 'Tasks', icon: ListChecks },
+  { href: '/search', label: 'Smart Filters', icon: Filter },
 ];
 
 const managerLinks = [
   { href: '/manager/team', label: 'Team Overview', icon: Users },
   { href: '/manager/roi', label: 'Hiring ROI', icon: TrendingUp },
-  { href: '/commission', label: 'Commission & Pods', icon: DollarSign },
+  { href: '/commission', label: 'Commission', icon: DollarSign },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -38,11 +43,11 @@ export default function Sidebar() {
   return (
     <aside className="flex flex-col w-64 border-r bg-card h-screen sticky top-0">
       <div className="p-6">
-        <h1 className="text-2xl font-bold tracking-tight">FreightPit</h1>
-        <p className="text-xs text-muted-foreground mt-1">Freight Broker CRM</p>
+        <h1 className="text-2xl font-bold tracking-tight">FreightCRM</h1>
+        <p className="text-xs text-muted-foreground mt-1">Freight Broker Sales</p>
       </div>
       <Separator />
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {repLinks.map((link) => (
           <Link
             key={link.href}

@@ -1,68 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateContent } from '@/lib/gemini';
 import dbConnect from '@/lib/mongodb';
 import User from '@/lib/models/User';
 import Activity from '@/lib/models/Activity';
-import Load from '@/lib/models/Load';
 import Company from '@/lib/models/Company';
+import { gemini } from '@/lib/gemini';
 import { requireSession } from '@/lib/session';
 
-const stageNames: Record<number, string> = {
-  1: 'Training', 2: 'Activity Only', 3: 'Activity + Talk Time', 4: 'Activity + Talk Time + Revenue', 5: 'Graduated',
-};
+export async function GET(req: NextRequest) {
+  await requireSession();
+  await dbConnect();
+  const url = new URL(req.url);
+  const repId = url.searchParams.get('repId');
+  if (!repId) return NextResponse.json({ error: 'repId required' }, { status: 400 });
 
-export async function POST(req: NextRequest) {
+  const rep = await User.findById(repId).lean();
+  if (!rep) return NextResponse.json({ error: 'Rep not found' }, { status: 404 });
+
+  const recentActivities = await Activity.find({ repId }).sort({ timestamp: -1 }).limit(30).lean();
+  const companies = await Company.find({ ownerRepId: repId }).lean();
+
+  const hotLeads = companies.filter(c => ['qualifying', 'quoting'].includes(c.status));
+  const stale = companies.filter(c => (c.daysSinceLastActivity || 0) > 14);
+
+  const summary = `
+Rep: ${rep.name}
+Role: ${rep.role}, Hired: ${new Date(rep.hireDate).toLocaleDateString()}
+Active Prospects: ${companies.filter(c => !['active_customer', 'inactive_customer'].includes(c.status)).length}
+Active Customers: ${companies.filter(c => c.status === 'active_customer').length}
+Recent calls (last 30 activities): ${recentActivities.filter(a => a.type?.includes('call')).length} calls
+Hot leads (qualifying/quoting): ${hotLeads.map(c => `${c.name} (${c.status}, ${c.totalTouches} touches, ${c.discoveryProgress}% discovered)`).join(', ')}
+Stale prospects (14+ days): ${stale.map(c => `${c.name} (${c.daysSinceLastActivity}d)`).join(', ')}
+Recent activity notes: ${recentActivities.slice(0, 5).map(a => a.notes).filter(Boolean).join(' | ')}
+  `.trim();
+
   try {
-    const session = await requireSession();
-    if (session.user.role === 'rep') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const response = await gemini.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{
+        role: 'user',
+        parts: [{ text: `You are a freight brokerage sales manager preparing for a one-on-one coaching session. Based on this rep's data, generate a brief coaching prep summary. Include: 1) Key wins this week, 2) Areas of concern, 3) Specific companies to discuss and why, 4) Suggested action items. Keep it concise and actionable.\n\n${summary}` }]
+      }],
+    });
 
-    const { repId } = await req.json();
-    await dbConnect();
-
-    const [rep, recentActivities, recentLoads, activeLeads] = await Promise.all([
-      User.findById(repId).select('-passwordHash').lean(),
-      Activity.find({ repId, type: 'call' }).sort({ timestamp: -1 }).limit(50).lean(),
-      Load.find({ repId }).sort({ pickupDate: -1 }).limit(20).lean(),
-      Company.find({ ownerRepId: repId }).sort({ lastContactDate: -1 }).limit(10).lean(),
-    ]);
-
-    if (!rep) return NextResponse.json({ error: 'Rep not found' }, { status: 404 });
-
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
-
-    const weekCalls = recentActivities.filter((a: any) => new Date(a.timestamp) >= weekStart);
-    const weekTalkTime = weekCalls.reduce((s: number, a: any) => s + (a.durationSeconds || 0), 0);
-    const weekGP = recentLoads
-      .filter((l: any) => new Date(l.pickupDate) >= weekStart)
-      .reduce((s: number, l: any) => s + (l.grossProfit || 0), 0);
-
-    const topLeads = (activeLeads as any[]).slice(0, 5).map((l: any) => `${l.name} (${l.status}, ${l.totalTouches} touches)`).join(', ');
-
-    const prompt = `You are a freight brokerage sales manager preparing for a one-on-one coaching meeting. Generate a concise coaching summary for this rep:
-
-Rep: ${(rep as any).name}
-Stage: ${stageNames[(rep as any).stage] || 'Unknown'} (Stage ${(rep as any).stage})
-Days since hire: ${Math.floor((now.getTime() - new Date((rep as any).hireDate).getTime()) / (1000 * 60 * 60 * 24))}
-This week: ${weekCalls.length} calls, ${Math.round(weekTalkTime / 60)} minutes talk time, $${weekGP} GP
-Active leads: ${(activeLeads as any[]).length}
-Top leads being worked: ${topLeads || 'None'}
-Recent call outcomes: ${weekCalls.slice(0, 10).map((a: any) => a.outcome).join(', ')}
-
-Based on their stage, provide:
-1. Key metrics vs expected targets
-2. What's going well
-3. Areas to improve
-4. Specific coaching points for the one-on-one
-5. Questions to ask the rep
-
-Keep it concise and actionable. Use bullet points.`;
-
-    const summary = await generateContent(prompt);
-    return NextResponse.json({ summary });
+    return NextResponse.json({ prep: response.text });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

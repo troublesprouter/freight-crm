@@ -3,36 +3,24 @@ import dbConnect from '@/lib/mongodb';
 import Contact from '@/lib/models/Contact';
 import { requireSession } from '@/lib/session';
 
-// GET /api/contacts?companyId=xxx
 export async function GET(req: NextRequest) {
-  try {
-    const session = await requireSession();
-    await dbConnect();
-    const { searchParams } = new URL(req.url);
-    const companyId = searchParams.get('companyId');
-
-    const query: any = { organizationId: session.user.organizationId };
-    if (companyId) query.companyId = companyId;
-
-    const contacts = await Contact.find(query).lean();
-    return NextResponse.json(contacts);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  await requireSession();
+  await dbConnect();
+  const url = new URL(req.url);
+  const companyId = url.searchParams.get('companyId');
+  const filter: any = {};
+  if (companyId) filter.companyId = companyId;
+  const contacts = await Contact.find(filter).sort({ isPrimary: -1, name: 1 }).lean();
+  return NextResponse.json(contacts);
 }
 
-// POST /api/contacts
 export async function POST(req: NextRequest) {
-  try {
-    const session = await requireSession();
-    await dbConnect();
-    const body = await req.json();
-    const contact = await Contact.create({
-      ...body,
-      organizationId: session.user.organizationId,
-    });
-    return NextResponse.json(contact, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const session = await requireSession();
+  await dbConnect();
+  const body = await req.json();
+  const contact = await Contact.create({
+    ...body,
+    organizationId: (session.user as any).organizationId,
+  });
+  return NextResponse.json(contact, { status: 201 });
 }

@@ -1,174 +1,187 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Phone, Clock, Square } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CALL_OUTCOMES } from '@/lib/constants';
 
 interface Props {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
-  leads: any[];
-  onLogged: () => void;
-  preselectedCompanyId?: string;
-  preselectedContactId?: string;
+  onClose: () => void;
+  companyId?: string;
+  contactId?: string;
 }
 
-export default function LogCallDialog({ open, onOpenChange, leads, onLogged, preselectedCompanyId, preselectedContactId }: Props) {
-  const [companyId, setCompanyId] = useState(preselectedCompanyId || '');
-  const [contactId, setContactId] = useState(preselectedContactId || '');
+export default function LogCallDialog({ open, onClose, companyId, contactId }: Props) {
+  const { data: session } = useSession();
+  const [companies, setCompanies] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
-  const [outcome, setOutcome] = useState('no_answer');
-  const [notes, setNotes] = useState('');
-  const [duration, setDuration] = useState(0);
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [timerStart, setTimerStart] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [manualDuration, setManualDuration] = useState('');
+  const [form, setForm] = useState({
+    companyId: companyId || '',
+    contactId: contactId || '',
+    type: 'call_outbound' as string,
+    outcome: '',
+    durationSeconds: 0,
+    notes: '',
+    followUpDate: '',
+    followUpNote: '',
+  });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (preselectedCompanyId) setCompanyId(preselectedCompanyId);
-    if (preselectedContactId) setContactId(preselectedContactId);
-  }, [preselectedCompanyId, preselectedContactId]);
+    if (!session) return;
+    const userId = (session.user as any).id;
+    fetch(`/api/companies?owner=${userId}`)
+      .then(r => r.json())
+      .then(d => setCompanies(Array.isArray(d) ? d : []));
+  }, [session]);
 
   useEffect(() => {
-    if (companyId) {
-      fetch(`/api/contacts?companyId=${companyId}`).then(r => r.json()).then(setContacts);
+    if (!form.companyId) return;
+    fetch(`/api/contacts?companyId=${form.companyId}`)
+      .then(r => r.json())
+      .then(d => setContacts(Array.isArray(d) ? d : []));
+  }, [form.companyId]);
+
+  const handleSave = async () => {
+    if (!form.companyId || !form.outcome) return;
+    setSaving(true);
+    try {
+      await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: form.companyId,
+          contactId: form.contactId || undefined,
+          type: form.type,
+          outcome: form.outcome,
+          durationSeconds: form.durationSeconds,
+          notes: form.notes,
+        }),
+      });
+
+      // Create follow-up task if specified
+      if (form.followUpDate) {
+        await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `Follow up with ${companies.find(c => c._id === form.companyId)?.name || 'company'}`,
+            notes: form.followUpNote,
+            dueDate: form.followUpDate,
+            companyId: form.companyId,
+            contactId: form.contactId || undefined,
+            triggerSource: 'manual',
+          }),
+        });
+      }
+
+      onClose();
+    } finally {
+      setSaving(false);
     }
-  }, [companyId]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (timerRunning && timerStart) {
-      interval = setInterval(() => {
-        setDuration(Math.floor((Date.now() - timerStart) / 1000));
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [timerRunning, timerStart]);
-
-  const startTimer = () => {
-    setTimerStart(Date.now());
-    setTimerRunning(true);
-  };
-
-  const stopTimer = () => {
-    setTimerRunning(false);
-  };
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  const handleSubmit = async () => {
-    if (!companyId) return;
-    setLoading(true);
-    const finalDuration = manualDuration ? parseInt(manualDuration) * 60 : duration;
-    await fetch('/api/activities', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        companyId,
-        contactId: contactId || undefined,
-        type: 'call',
-        durationSeconds: finalDuration,
-        outcome,
-        notes,
-      }),
-    });
-    setLoading(false);
-    setCompanyId('');
-    setContactId('');
-    setOutcome('no_answer');
-    setNotes('');
-    setDuration(0);
-    setTimerRunning(false);
-    setTimerStart(null);
-    setManualDuration('');
-    onOpenChange(false);
-    onLogged();
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Phone className="h-5 w-5" /> Log Call
-          </DialogTitle>
+          <DialogTitle>Log Call</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Company</Label>
-            <Select value={companyId} onValueChange={setCompanyId}>
-              <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
-              <SelectContent>
-                {leads.map((l: any) => (
-                  <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {contacts.length > 0 && (
-            <div className="space-y-2">
-              <Label>Contact</Label>
-              <Select value={contactId} onValueChange={setContactId}>
-                <SelectTrigger><SelectValue placeholder="Select contact (optional)" /></SelectTrigger>
+          {!companyId && (
+            <div>
+              <Label>Company</Label>
+              <Select value={form.companyId} onValueChange={v => setForm(f => ({ ...f, companyId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
                 <SelectContent>
-                  {contacts.map((c: any) => (
-                    <SelectItem key={c._id} value={c._id}>{c.name} {c.title && `(${c.title})`}</SelectItem>
+                  {companies.map(c => (
+                    <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label>Duration</Label>
-            <div className="flex items-center gap-3">
-              {timerRunning ? (
-                <Button type="button" variant="destructive" size="sm" onClick={stopTimer}>
-                  <Square className="h-3 w-3 mr-1" /> Stop
-                </Button>
-              ) : (
-                <Button type="button" variant="outline" size="sm" onClick={startTimer}>
-                  <Clock className="h-3 w-3 mr-1" /> Start Timer
-                </Button>
-              )}
-              <span className="text-2xl font-mono font-bold">{formatTime(duration)}</span>
-              <span className="text-muted-foreground text-sm">or</span>
-              <Input type="number" placeholder="min" className="w-20" value={manualDuration} onChange={(e) => setManualDuration(e.target.value)} />
-              <span className="text-sm text-muted-foreground">min</span>
+          {contacts.length > 0 && (
+            <div>
+              <Label>Contact</Label>
+              <Select value={form.contactId} onValueChange={v => setForm(f => ({ ...f, contactId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
+                <SelectContent>
+                  {contacts.map(c => (
+                    <SelectItem key={c._id} value={c._id}>{c.name} — {c.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Direction</Label>
+              <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="call_outbound">Outbound</SelectItem>
+                  <SelectItem value="call_inbound">Inbound</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Outcome</Label>
+              <Select value={form.outcome} onValueChange={v => setForm(f => ({ ...f, outcome: v }))}>
+                <SelectTrigger><SelectValue placeholder="Outcome" /></SelectTrigger>
+                <SelectContent>
+                  {CALL_OUTCOMES.map(o => (
+                    <SelectItem key={o} value={o}>{o}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Outcome</Label>
-            <Select value={outcome} onValueChange={setOutcome}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="no_answer">No Answer</SelectItem>
-                <SelectItem value="voicemail">Voicemail</SelectItem>
-                <SelectItem value="connected">Connected</SelectItem>
-                <SelectItem value="meeting_booked">Meeting Booked</SelectItem>
-              </SelectContent>
-            </Select>
+          <div>
+            <Label>Duration (minutes)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={form.durationSeconds / 60}
+              onChange={e => setForm(f => ({ ...f, durationSeconds: Math.round(Number(e.target.value) * 60) }))}
+            />
           </div>
 
-          <div className="space-y-2">
+          <div>
             <Label>Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Quick notes..." rows={3} />
+            <Textarea
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Call notes..."
+              rows={3}
+            />
           </div>
 
-          <Button onClick={handleSubmit} className="w-full" disabled={loading || !companyId}>
-            {loading ? 'Logging...' : 'Log Call'}
+          <div className="border-t pt-3 space-y-3">
+            <p className="text-sm font-medium">Schedule Follow-up</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={form.followUpDate} onChange={e => setForm(f => ({ ...f, followUpDate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Note to self</Label>
+                <Input value={form.followUpNote} onChange={e => setForm(f => ({ ...f, followUpNote: e.target.value }))} placeholder="What to discuss" />
+              </div>
+            </div>
+          </div>
+
+          <Button onClick={handleSave} disabled={saving || !form.companyId || !form.outcome} className="w-full">
+            {saving ? 'Saving...' : 'Log Call & Save'}
           </Button>
         </div>
       </DialogContent>

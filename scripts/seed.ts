@@ -3,225 +3,306 @@ import bcrypt from 'bcryptjs';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://mongo_user:y.3.CNPMGvwF9njuyRUpseuCp@cluster0.d0hnnfp.mongodb.net/freightpit?appName=Cluster0';
 
-// Inline schemas to avoid import issues
-const OrganizationSchema = new mongoose.Schema({
-  name: String,
-  settings: {
-    leadCap: { type: Number, default: 150 },
-    cooldownDays: { type: Number, default: 7 },
-    commissionPct: { type: Number, default: 25 },
-    baseSalary: { type: Number, default: 4000 },
-    podThreshold: { type: Number, default: 4000 },
-    stageConfigs: { type: Array, default: [] },
-  },
-  inviteCode: String,
-}, { timestamps: true });
-
-const UserSchema = new mongoose.Schema({
-  name: String, email: String, passwordHash: String,
-  role: String, organizationId: mongoose.Schema.Types.ObjectId,
-  hireDate: Date, stage: Number, leadCap: Number,
-  salaryMonthly: Number, commissionPct: Number,
-  trainingClass: String, isActive: { type: Boolean, default: true },
-}, { timestamps: true });
-
-const CompanySchema = new mongoose.Schema({
-  name: String, address: String, website: String, industry: String,
-  ownerRepId: { type: mongoose.Schema.Types.ObjectId, default: null },
-  ownedSince: Date, status: String,
-  qualification: { lanes: [String], commodities: [String], equipmentTypes: [String], estWeeklyLoads: Number },
-  tags: [String], releasedAt: Date, nextFollowUp: Date,
-  lastContactDate: Date, totalTouches: { type: Number, default: 0 },
-  organizationId: mongoose.Schema.Types.ObjectId,
-}, { timestamps: true });
-
-const ContactSchema = new mongoose.Schema({
-  companyId: mongoose.Schema.Types.ObjectId, name: String,
-  title: String, phone: String, email: String,
-  organizationId: mongoose.Schema.Types.ObjectId,
-}, { timestamps: true });
-
-const ActivitySchema = new mongoose.Schema({
-  repId: mongoose.Schema.Types.ObjectId, companyId: mongoose.Schema.Types.ObjectId,
-  contactId: mongoose.Schema.Types.ObjectId, type: String,
-  timestamp: Date, durationSeconds: Number, outcome: String,
-  notes: String, recordingUrl: String,
-  organizationId: mongoose.Schema.Types.ObjectId,
-}, { timestamps: true });
-
-const LoadSchema = new mongoose.Schema({
-  repId: mongoose.Schema.Types.ObjectId, companyId: mongoose.Schema.Types.ObjectId,
-  pickupDate: Date, deliveryDate: Date, origin: String, destination: String,
-  revenue: Number, carrierCost: Number, grossProfit: Number,
-  organizationId: mongoose.Schema.Types.ObjectId,
-}, { timestamps: true });
-
 async function seed() {
   await mongoose.connect(MONGODB_URI);
-  console.log('Connected to MongoDB');
-
-  // Clean
   const db = mongoose.connection.db!;
+
+  // Clean existing data
   const collections = await db.listCollections().toArray();
-  for (const c of collections) {
-    await db.dropCollection(c.name);
+  for (const col of collections) {
+    await db.dropCollection(col.name);
   }
-  console.log('Cleaned database');
 
-  const Organization = mongoose.model('Organization', OrganizationSchema);
-  const User = mongoose.model('User', UserSchema);
-  const Company = mongoose.model('Company', CompanySchema);
-  const Contact = mongoose.model('Contact', ContactSchema);
-  const Activity = mongoose.model('Activity', ActivitySchema);
-  const Load = mongoose.model('Load', LoadSchema);
-
-  // Create org
-  const org = await Organization.create({
+  // Create organization
+  const org = await db.collection('organizations').insertOne({
     name: 'Demo Freight Brokerage',
-    inviteCode: 'DEMO2026',
     settings: {
       leadCap: 150,
       cooldownDays: 7,
       commissionPct: 25,
       baseSalary: 4000,
-      podThreshold: 4000,
+      commissionThreshold: 4000,
+      supportStaffCost: 1000,
+      trailingAvgWeeks: 12,
+      inactiveWarningDays: 30,
+      inactiveAutoMoveDays: 60,
+      benchmarks: [
+        { month: 1, callsPerDay: 100, talkTimeMinutes: 0, monthlyGP: 0, weeklyGP: 0 },
+        { month: 2, callsPerDay: 100, talkTimeMinutes: 30, monthlyGP: 0, weeklyGP: 0 },
+        { month: 3, callsPerDay: 100, talkTimeMinutes: 45, monthlyGP: 0, weeklyGP: 0 },
+        { month: 4, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 1200, weeklyGP: 0 },
+        { month: 5, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 1200, weeklyGP: 0 },
+        { month: 6, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 2500, weeklyGP: 0 },
+        { month: 7, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 2500, weeklyGP: 0 },
+        { month: 8, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 0, weeklyGP: 4000 },
+      ],
     },
+    inviteCode: 'DEMO2026',
+    createdAt: new Date(),
   });
 
-  const passwordHash = await bcrypt.hash('password123', 12);
+  const orgId = org.insertedId;
+  const hash = await bcrypt.hash('password123', 10);
 
   // Create users
-  const admin = await User.create({
-    name: 'Mike Manager', email: 'admin@demo.com', passwordHash,
-    role: 'admin', organizationId: org._id,
-    hireDate: new Date('2024-01-01'), stage: 5, salaryMonthly: 6000, commissionPct: 25,
-    trainingClass: 'Leadership',
+  const admin = await db.collection('users').insertOne({
+    name: 'Sarah Manager',
+    email: 'admin@demo.com',
+    passwordHash: hash,
+    role: 'admin',
+    hireDate: new Date('2024-01-01'),
+    leadCap: 150,
+    salaryMonthly: 6000,
+    commissionPct: 25,
+    organizationId: orgId,
+    createdAt: new Date(),
   });
 
-  const reps = await User.create([
-    { name: 'Sarah Johnson', email: 'sarah@demo.com', passwordHash, role: 'rep', organizationId: org._id, hireDate: new Date('2025-08-01'), stage: 4, salaryMonthly: 4000, commissionPct: 25, trainingClass: 'Class of Aug 2025' },
-    { name: 'Jake Williams', email: 'jake@demo.com', passwordHash, role: 'rep', organizationId: org._id, hireDate: new Date('2025-10-01'), stage: 3, salaryMonthly: 4000, commissionPct: 25, trainingClass: 'Class of Oct 2025' },
-    { name: 'Emily Chen', email: 'emily@demo.com', passwordHash, role: 'rep', organizationId: org._id, hireDate: new Date('2025-12-01'), stage: 2, salaryMonthly: 4000, commissionPct: 25, trainingClass: 'Class of Dec 2025' },
-    { name: 'Tom Broker', email: 'tom@demo.com', passwordHash, role: 'rep', organizationId: org._id, hireDate: new Date('2026-01-15'), stage: 1, salaryMonthly: 3500, commissionPct: 25, trainingClass: 'Class of Jan 2026' },
-  ]);
+  const rep1 = await db.collection('users').insertOne({
+    name: 'Jake Thompson',
+    email: 'jake@demo.com',
+    passwordHash: hash,
+    role: 'rep',
+    hireDate: new Date('2025-09-01'),
+    leadCap: 150,
+    salaryMonthly: 4000,
+    commissionPct: 25,
+    organizationId: orgId,
+    createdAt: new Date(),
+  });
 
-  const companyNames = [
-    { name: 'Midwest Produce Co', industry: 'Agriculture', address: 'Des Moines, IA', tags: ['food-grade', 'reefer'] },
-    { name: 'Great Lakes Steel', industry: 'Manufacturing', address: 'Detroit, MI', tags: ['flatbed', 'heavy'] },
-    { name: 'Southern Lumber Supply', industry: 'Construction', address: 'Atlanta, GA', tags: ['flatbed'] },
-    { name: 'Pacific Electronics Corp', industry: 'Technology', address: 'Portland, OR', tags: ['high-value'] },
-    { name: 'Heartland Foods Inc', industry: 'Food & Beverage', address: 'Kansas City, MO', tags: ['reefer', 'food-grade'] },
-    { name: 'Mountain Mining Resources', industry: 'Mining', address: 'Denver, CO', tags: ['flatbed', 'heavy'] },
-    { name: 'Coastal Fishing Enterprises', industry: 'Seafood', address: 'Seattle, WA', tags: ['reefer'] },
-    { name: 'Prairie Wind Energy', industry: 'Energy', address: 'Oklahoma City, OK', tags: ['oversized'] },
-    { name: 'Valley Pharmaceutical', industry: 'Healthcare', address: 'Indianapolis, IN', tags: ['temperature-controlled'] },
-    { name: 'Metro Distribution LLC', industry: 'Logistics', address: 'Chicago, IL', tags: ['dry-van'] },
-    { name: 'Sunshine Citrus Growers', industry: 'Agriculture', address: 'Tampa, FL', tags: ['reefer', 'food-grade'] },
-    { name: 'Northern Paper Mills', industry: 'Manufacturing', address: 'Green Bay, WI', tags: ['dry-van'] },
-    { name: 'Delta Chemical Products', industry: 'Chemical', address: 'Houston, TX', tags: ['hazmat', 'tanker'] },
-    { name: 'Rocky Mountain Brewing', industry: 'Food & Beverage', address: 'Boulder, CO', tags: ['reefer'] },
-    { name: 'Eastern Textile Group', industry: 'Textiles', address: 'Charlotte, NC', tags: ['dry-van'] },
-    { name: 'Lone Star Cattle Ranch', industry: 'Agriculture', address: 'Dallas, TX', tags: ['livestock'] },
-    { name: 'Liberty Auto Parts', industry: 'Automotive', address: 'Columbus, OH', tags: ['dry-van'] },
-    { name: 'Bayou Seafood Distributors', industry: 'Seafood', address: 'New Orleans, LA', tags: ['reefer'] },
-    { name: 'Alpine Dairy Farms', industry: 'Dairy', address: 'Madison, WI', tags: ['reefer', 'food-grade'] },
-    { name: 'Central Plains Grain', industry: 'Agriculture', address: 'Omaha, NE', tags: ['hopper', 'dry-van'] },
+  const rep2 = await db.collection('users').insertOne({
+    name: 'Maria Garcia',
+    email: 'maria@demo.com',
+    passwordHash: hash,
+    role: 'rep',
+    hireDate: new Date('2025-11-01'),
+    leadCap: 150,
+    salaryMonthly: 4000,
+    commissionPct: 25,
+    organizationId: orgId,
+    createdAt: new Date(),
+  });
+
+  // Create companies with freight-specific data
+  const companyData = [
+    { name: 'Midwest Steel Corp', owner: rep1.insertedId, status: 'qualifying', commodityTypes: ['Steel coils', 'Automotive'], equipmentTypes: ['Flatbed/open deck', 'Step deck'], weeklyTruckloadVolume: '20–40', managesFreightVia: 'Email', geography: ['Midwest', 'Northeast'], source: 'Cold call', discoveryProgress: 62, totalTouches: 18 },
+    { name: 'Florida Citrus Growers', owner: rep1.insertedId, status: 'quoting', commodityTypes: ['Citrus', 'Produce'], equipmentTypes: ['Reefer'], weeklyTruckloadVolume: '40–60', managesFreightVia: 'Portal (waterfall)', hasRFP: true, rfpCycle: 'Annual', geography: ['Southeast'], source: 'Referral', discoveryProgress: 85, totalTouches: 25 },
+    { name: 'Pacific Paper Products', owner: rep1.insertedId, status: 'engaged', commodityTypes: ['Paper'], equipmentTypes: ['Dry van'], weeklyTruckloadVolume: '10–20', managesFreightVia: 'TMS', geography: ['West Coast'], source: 'Cold call', discoveryProgress: 35, totalTouches: 7 },
+    { name: 'Gulf Chemical Transport', owner: rep1.insertedId, status: 'active_customer', commodityTypes: ['Chemicals', 'Hazmat'], equipmentTypes: ['Tanker'], weeklyTruckloadVolume: '5–10', managesFreightVia: 'Email', geography: ['Southwest', 'Southeast'], source: 'LinkedIn', discoveryProgress: 90, totalTouches: 42 },
+    { name: 'Southern Building Supply', owner: rep1.insertedId, status: 'cold_outreach', commodityTypes: ['Building materials', 'Lumber'], equipmentTypes: ['Flatbed/open deck'], weeklyTruckloadVolume: '10–20', geography: ['Southeast'], source: 'Cold call', discoveryProgress: 8, totalTouches: 3 },
+    { name: 'Great Lakes Dairy', owner: rep2.insertedId, status: 'qualifying', commodityTypes: ['Dairy', 'Frozen foods'], equipmentTypes: ['Reefer'], weeklyTruckloadVolume: '20–40', managesFreightVia: 'Portal (price-based)', geography: ['Midwest', 'Northeast'], source: 'Cold call', discoveryProgress: 55, totalTouches: 14 },
+    { name: 'Texas Auto Parts Inc', owner: rep2.insertedId, status: 'engaged', commodityTypes: ['Automotive', 'Machinery'], equipmentTypes: ['Dry van', 'Flatbed/open deck'], weeklyTruckloadVolume: '10–20', managesFreightVia: 'Email', geography: ['Southwest', 'Cross-country'], source: 'Cold call', discoveryProgress: 28, totalTouches: 9 },
+    { name: 'Carolina Textiles', owner: rep2.insertedId, status: 'onboarding', commodityTypes: ['Textiles'], equipmentTypes: ['Dry van'], weeklyTruckloadVolume: '5–10', managesFreightVia: 'Phone', geography: ['Southeast'], source: 'Referral', discoveryProgress: 72, totalTouches: 20 },
+    // Unowned (prospect pool)
+    { name: 'Northwest Lumber Co', owner: null, status: 'new_researching', commodityTypes: ['Lumber', 'Building materials'], equipmentTypes: ['Flatbed/open deck'], geography: ['West Coast'], source: 'Load board' },
+    { name: 'Boston Seafood Distributors', owner: null, status: 'new_researching', commodityTypes: ['Seafood', 'Frozen foods'], equipmentTypes: ['Reefer'], geography: ['Northeast'], source: 'Cold call' },
+    { name: 'Denver Electronics Hub', owner: null, status: 'new_researching', commodityTypes: ['Electronics'], equipmentTypes: ['Dry van'], geography: ['Southwest', 'West Coast'], source: 'Website' },
+    { name: 'Nashville Food & Bev Corp', owner: null, status: 'new_researching', commodityTypes: ['Food & beverage', 'Beverages'], equipmentTypes: ['Reefer', 'Dry van'], geography: ['Southeast', 'Midwest'], source: 'Event' },
+    { name: 'Phoenix Plastics', owner: null, status: 'new_researching', commodityTypes: ['Plastics'], equipmentTypes: ['Dry van'], geography: ['Southwest'], source: 'Cold call' },
   ];
 
-  // Create companies — some owned, some cold
-  const companies = [];
-  for (let i = 0; i < companyNames.length; i++) {
-    const c = companyNames[i];
-    const isOwned = i < 12; // first 12 are owned
-    const ownerRep = isOwned ? reps[i % reps.length] : null;
-
-    const company = await Company.create({
+  const companyIds: any[] = [];
+  for (const c of companyData) {
+    const res = await db.collection('companies').insertOne({
       ...c,
-      ownerRepId: ownerRep?._id || null,
-      ownedSince: ownerRep ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) : null,
-      status: isOwned ? ['cold', 'warm', 'hot', 'quoting'][Math.floor(Math.random() * 4)] : 'cold',
-      qualification: {
-        lanes: ['SE → MW', 'NE → SE', 'MW → NE'][Math.floor(Math.random() * 3)].split(',').map(s => s.trim()),
-        commodities: c.tags.slice(0, 1),
-        equipmentTypes: ['Dry Van', 'Reefer', 'Flatbed'].slice(0, Math.floor(Math.random() * 3) + 1),
-        estWeeklyLoads: Math.floor(Math.random() * 20) + 1,
-      },
-      nextFollowUp: isOwned ? new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000) : null,
-      lastContactDate: isOwned ? new Date(Date.now() - Math.random() * 14 * 24 * 60 * 60 * 1000) : null,
-      totalTouches: isOwned ? Math.floor(Math.random() * 15) + 1 : 0,
-      organizationId: org._id,
+      ownerRepId: c.owner,
+      ownedSince: c.owner ? new Date(Date.now() - Math.random() * 90 * 86400000) : null,
+      locations: c.owner ? [{ address: '123 Main St', phone: '555-0100', shippingContact: 'Dock Manager' }] : [],
+      shipmentType: ['Customer-facing'],
+      shipsOnWeekends: false,
+      busiestSeason: ['Q4', 'Summer'],
+      slowestSeason: ['Q1'],
+      avgWeeklyVolumePeak: 0,
+      avgWeeklyVolumeSlow: 0,
+      volumeVsLastYear: 'Flat',
+      whoArrangesInbound: '',
+      whoArrangesOutbound: '',
+      hasRFP: c.hasRFP || false,
+      rfpCycle: c.rfpCycle || '',
+      rfpNextDate: null,
+      tags: [],
+      releasedAt: null,
+      lastActivityDate: c.owner ? new Date(Date.now() - Math.random() * 14 * 86400000) : null,
+      daysSinceLastActivity: c.owner ? Math.floor(Math.random() * 14) : 0,
+      discoveryProgress: c.discoveryProgress || 0,
+      totalTouches: c.totalTouches || 0,
+      organizationId: orgId,
+      createdAt: new Date(Date.now() - Math.random() * 120 * 86400000),
     });
-    companies.push(company);
-
-    // Create contacts for owned companies
-    if (isOwned) {
-      const numContacts = Math.floor(Math.random() * 3) + 1;
-      for (let j = 0; j < numContacts; j++) {
-        await Contact.create({
-          companyId: company._id,
-          name: ['John Smith', 'Jane Doe', 'Bob Miller', 'Alice Johnson'][j % 4],
-          title: ['Logistics Manager', 'VP Operations', 'Shipping Coordinator'][j % 3],
-          phone: `555-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
-          email: `contact${j}@${c.name.toLowerCase().replace(/\s/g, '')}.com`,
-          organizationId: org._id,
-        });
-      }
-    }
+    companyIds.push({ id: res.insertedId, owner: c.owner, name: c.name });
   }
 
-  // Create activities for owned companies
-  const outcomes = ['no_answer', 'voicemail', 'connected', 'meeting_booked'];
-  for (const rep of reps) {
-    const repCompanies = companies.filter(c => c.ownerRepId?.toString() === rep._id.toString());
-    for (const company of repCompanies) {
-      const numActivities = Math.floor(Math.random() * 20) + 5;
-      for (let i = 0; i < numActivities; i++) {
-        const daysAgo = Math.floor(Math.random() * 30);
-        await Activity.create({
-          repId: rep._id,
-          companyId: company._id,
-          type: Math.random() > 0.2 ? 'call' : Math.random() > 0.5 ? 'email' : 'note',
-          timestamp: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
-          durationSeconds: Math.floor(Math.random() * 600) + 30,
-          outcome: outcomes[Math.floor(Math.random() * outcomes.length)],
-          notes: ['Good conversation about lanes', 'Left voicemail', 'Discussed pricing', 'Talked about reefer needs', 'No pick up'][Math.floor(Math.random() * 5)],
-          organizationId: org._id,
-        });
-      }
-    }
+  // Create contacts
+  const contactData = [
+    { companyIdx: 0, name: 'Bob Mitchell', title: 'VP of Logistics', role: 'decision_maker', isPrimary: true, phone: '555-0201', email: 'bob@midweststeel.com', personalKids: 'Two boys - Tyler (8) and Mason (5)', personalSportsTeam: 'Cleveland Browns', personalHobbies: 'Fishing, golf on weekends' },
+    { companyIdx: 0, name: 'Lisa Chen', title: 'Freight Coordinator', role: 'freight_tenderer_active', isPrimary: false, phone: '555-0202', email: 'lisa@midweststeel.com', personalHobbies: 'Runs marathons' },
+    { companyIdx: 1, name: 'Carlos Rodriguez', title: 'Supply Chain Director', role: 'decision_maker', isPrimary: true, phone: '555-0301', email: 'carlos@flcitrus.com', personalSportsTeam: 'Miami Dolphins', personalKids: 'Daughter Sofia, just started college' },
+    { companyIdx: 1, name: 'Amy Foster', title: 'Shipping Manager', role: 'freight_tenderer_active', isPrimary: false, phone: '555-0302', email: 'amy@flcitrus.com', bestTimeToReach: 'Tuesday/Thursday mornings' },
+    { companyIdx: 2, name: 'Tom Walker', title: 'Operations Manager', role: 'ops_logistics', isPrimary: true, phone: '555-0401', email: 'tom@pacificpaper.com', personalHobbies: 'Big into sailing' },
+    { companyIdx: 3, name: 'Diana Price', title: 'Logistics VP', role: 'decision_maker', isPrimary: true, phone: '555-0501', email: 'diana@gulfchem.com', personalSportsTeam: 'Houston Texans', personalNotes: 'Alma mater: Texas A&M' },
+    { companyIdx: 5, name: 'Mike Anderson', title: 'Distribution Manager', role: 'decision_maker', isPrimary: true, phone: '555-0601', email: 'mike@greatlakesdairy.com', personalKids: 'Three kids, youngest just started little league', personalSportsTeam: 'Green Bay Packers' },
+    { companyIdx: 6, name: 'Jenny Park', title: 'Freight Manager', role: 'freight_tenderer_prospect', isPrimary: true, phone: '555-0701', email: 'jenny@texasauto.com', preferredContactMethod: 'Email', bestTimeToReach: 'After 2pm CST' },
+    { companyIdx: 7, name: 'Rachel Torres', title: 'Supply Chain Lead', role: 'freight_tenderer_active', isPrimary: true, phone: '555-0801', email: 'rachel@carolinatextiles.com' },
+  ];
 
-    // Create some loads for reps in stages 4-5
-    if ((rep as any).stage >= 4) {
-      const numLoads = Math.floor(Math.random() * 10) + 3;
-      for (let i = 0; i < numLoads; i++) {
-        const revenue = Math.floor(Math.random() * 3000) + 1000;
-        const carrierCost = Math.floor(revenue * (0.75 + Math.random() * 0.15));
-        const daysAgo = Math.floor(Math.random() * 60);
-        const repCompany = repCompanies[Math.floor(Math.random() * repCompanies.length)];
-        if (!repCompany) continue;
-        await Load.create({
-          repId: rep._id,
-          companyId: repCompany._id,
-          pickupDate: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
-          deliveryDate: new Date(Date.now() - (daysAgo - 2) * 24 * 60 * 60 * 1000),
-          origin: ['Chicago, IL', 'Dallas, TX', 'Atlanta, GA'][Math.floor(Math.random() * 3)],
-          destination: ['New York, NY', 'Los Angeles, CA', 'Miami, FL'][Math.floor(Math.random() * 3)],
-          revenue,
-          carrierCost,
-          grossProfit: revenue - carrierCost,
-          organizationId: org._id,
-        });
-      }
-    }
+  const contactIds: any[] = [];
+  for (const c of contactData) {
+    const company = companyIds[c.companyIdx];
+    const res = await db.collection('contacts').insertOne({
+      companyId: company.id,
+      name: c.name,
+      title: c.title,
+      phone: c.phone || '',
+      email: c.email || '',
+      role: c.role,
+      isPrimary: c.isPrimary,
+      locationId: '',
+      personalKids: c.personalKids || '',
+      personalSportsTeam: c.personalSportsTeam || '',
+      personalHobbies: c.personalHobbies || '',
+      personalPastJobs: '',
+      personalNotes: c.personalNotes || '',
+      preferredContactMethod: c.preferredContactMethod || '',
+      bestTimeToReach: c.bestTimeToReach || '',
+      organizationId: orgId,
+      createdAt: new Date(),
+    });
+    contactIds.push(res.insertedId);
   }
 
-  console.log('Seed complete!');
-  console.log('Login: admin@demo.com / password123 (Admin)');
-  console.log('Login: sarah@demo.com / password123 (Rep, Stage 4)');
-  console.log('Login: jake@demo.com / password123 (Rep, Stage 3)');
-  console.log('Login: emily@demo.com / password123 (Rep, Stage 2)');
-  console.log('Login: tom@demo.com / password123 (Rep, Stage 1)');
-  console.log('Invite code: DEMO2026');
+  // Create activities
+  const now = Date.now();
+  const activities = [];
+  for (let i = 0; i < 80; i++) {
+    const companyEntry = companyIds[Math.floor(Math.random() * 8)]; // owned companies
+    if (!companyEntry.owner) continue;
+    activities.push({
+      repId: companyEntry.owner,
+      companyId: companyEntry.id,
+      contactId: contactIds[Math.floor(Math.random() * contactIds.length)],
+      type: ['call_outbound', 'call_outbound', 'call_outbound', 'email_sent', 'note', 'quote_sent'][Math.floor(Math.random() * 6)],
+      timestamp: new Date(now - Math.random() * 30 * 86400000),
+      durationSeconds: Math.floor(Math.random() * 600),
+      outcome: ['Connected', 'Voicemail', 'No answer', 'Connected'][Math.floor(Math.random() * 4)],
+      notes: ['Great conversation about Q2 volumes', 'Left voicemail, will try again Thursday', 'Discussed dry van rates for ATL-CHI lane', 'Sent intro email', 'Follow up on quote sent last week', ''][Math.floor(Math.random() * 6)],
+      quoteLane: '',
+      quoteRate: 0,
+      quoteEquipment: '',
+      quoteOutcome: '',
+      emailSubject: '',
+      organizationId: orgId,
+      createdAt: new Date(),
+    });
+  }
+  if (activities.length > 0) await db.collection('activities').insertMany(activities);
+
+  // Create deals
+  const dealData = [
+    { companyIdx: 0, name: 'Midwest Steel — CHI to DET Flatbed', lanes: 'Chicago, IL → Detroit, MI', equipmentType: 'Flatbed/open deck', estimatedWeeklyLoads: 5, estimatedMarginPerLoad: 350, stage: 'qualifying' },
+    { companyIdx: 1, name: 'FL Citrus — ORL to NYC Reefer', lanes: 'Orlando, FL → New York, NY', equipmentType: 'Reefer', estimatedWeeklyLoads: 12, estimatedMarginPerLoad: 400, stage: 'quoting' },
+    { companyIdx: 3, name: 'Gulf Chem — HOU to ATL Tanker', lanes: 'Houston, TX → Atlanta, GA', equipmentType: 'Tanker', estimatedWeeklyLoads: 3, estimatedMarginPerLoad: 500, stage: 'active_customer' },
+    { companyIdx: 5, name: 'Great Lakes — MKE to CHI Reefer', lanes: 'Milwaukee, WI → Chicago, IL', equipmentType: 'Reefer', estimatedWeeklyLoads: 8, estimatedMarginPerLoad: 250, stage: 'qualifying' },
+    { companyIdx: 7, name: 'Carolina Textiles — CLT to NYC', lanes: 'Charlotte, NC → New York, NY', equipmentType: 'Dry van', estimatedWeeklyLoads: 4, estimatedMarginPerLoad: 300, stage: 'onboarding' },
+  ];
+
+  for (const d of dealData) {
+    const company = companyIds[d.companyIdx];
+    await db.collection('deals').insertOne({
+      name: d.name,
+      companyId: company.id,
+      contactIds: [],
+      stage: d.stage,
+      lanes: d.lanes,
+      equipmentType: d.equipmentType,
+      estimatedWeeklyLoads: d.estimatedWeeklyLoads,
+      estimatedMarginPerLoad: d.estimatedMarginPerLoad,
+      estimatedWeeklyGP: d.estimatedWeeklyLoads * d.estimatedMarginPerLoad,
+      actualLoads: d.stage === 'active_customer' ? d.estimatedWeeklyLoads : 0,
+      actualMargin: d.stage === 'active_customer' ? d.estimatedMarginPerLoad : 0,
+      dateWonLost: null,
+      lostReason: '',
+      repId: company.owner,
+      organizationId: orgId,
+      createdAt: new Date(),
+    });
+  }
+
+  // Create loads for active customer
+  const loads = [];
+  for (let w = 0; w < 8; w++) {
+    for (let l = 0; l < 3; l++) {
+      const pickupDate = new Date(now - w * 7 * 86400000 - l * 86400000);
+      loads.push({
+        repId: rep1.insertedId,
+        companyId: companyIds[3].id,
+        dealId: null,
+        pickupDate,
+        deliveryDate: new Date(pickupDate.getTime() + 2 * 86400000),
+        origin: 'Houston, TX',
+        destination: 'Atlanta, GA',
+        revenue: 2200 + Math.random() * 400,
+        carrierCost: 1600 + Math.random() * 300,
+        grossProfit: 400 + Math.random() * 200,
+        organizationId: orgId,
+        createdAt: new Date(),
+      });
+    }
+  }
+  if (loads.length > 0) await db.collection('loads').insertMany(loads);
+
+  // Create some tasks
+  const taskData = [
+    { title: 'Follow up with Bob Mitchell on Q2 rates', repId: rep1.insertedId, companyId: companyIds[0].id, dueDate: new Date(now + 86400000), priority: 'high', triggerSource: 'manual' },
+    { title: 'Send updated quote to Florida Citrus', repId: rep1.insertedId, companyId: companyIds[1].id, dueDate: new Date(now + 2 * 86400000), priority: 'high', triggerSource: 'manual' },
+    { title: 'Follow up with Pacific Paper — 7 days since last touch', repId: rep1.insertedId, companyId: companyIds[2].id, dueDate: new Date(now), priority: 'medium', triggerSource: 'no_contact_7d' },
+    { title: 'Call Mike Anderson re: upcoming peak season', repId: rep2.insertedId, companyId: companyIds[5].id, dueDate: new Date(now + 86400000), priority: 'medium', triggerSource: 'manual' },
+    { title: 'Send onboarding paperwork to Carolina Textiles', repId: rep2.insertedId, companyId: companyIds[7].id, dueDate: new Date(now), priority: 'high', triggerSource: 'manual' },
+  ];
+
+  for (const t of taskData) {
+    await db.collection('tasks').insertOne({
+      ...t,
+      notes: '',
+      dueTime: '',
+      contactId: null,
+      status: 'pending',
+      completedAt: null,
+      organizationId: orgId,
+      createdAt: new Date(),
+    });
+  }
+
+  // Discovery answers for some companies
+  const discoveryData = [
+    { companyIdx: 0, questionId: 'order_portal_email', answer: 'Email — they prefer sending requests via email' },
+    { companyIdx: 0, questionId: 'ship_type', answer: 'Outbound finished steel products' },
+    { companyIdx: 0, questionId: 'ship_lanes_frequent', answer: 'CHI to DET, CHI to CLE, CHI to PIT' },
+    { companyIdx: 0, questionId: 'season_busy', answer: 'Q2 and Q3 — construction season' },
+    { companyIdx: 1, questionId: 'rfp_has', answer: 'Yes — annual RFP in October' },
+    { companyIdx: 1, questionId: 'season_busy', answer: 'Jan-May — citrus season, peak in Feb-Mar' },
+    { companyIdx: 1, questionId: 'ship_lanes_frequent', answer: 'ORL to NYC, ORL to BOS, ORL to PHI, ORL to DC' },
+    { companyIdx: 1, questionId: 'ship_weekends', answer: 'Yes, Saturday pickups during peak season' },
+  ];
+
+  for (const d of discoveryData) {
+    await db.collection('discoveryanswers').insertOne({
+      companyId: companyIds[d.companyIdx].id,
+      questionId: d.questionId,
+      answer: d.answer,
+      answeredBy: rep1.insertedId,
+      answeredAt: new Date(),
+      organizationId: orgId,
+      createdAt: new Date(),
+    });
+  }
+
+  console.log('✅ Seed complete!');
+  console.log(`  Organization: ${orgId}`);
+  console.log(`  Admin: admin@demo.com / password123`);
+  console.log(`  Rep 1: jake@demo.com / password123`);
+  console.log(`  Rep 2: maria@demo.com / password123`);
+  console.log(`  ${companyIds.length} companies, ${contactIds.length} contacts`);
 
   await mongoose.disconnect();
   process.exit(0);

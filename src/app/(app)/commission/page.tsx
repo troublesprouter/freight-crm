@@ -1,150 +1,99 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { DollarSign, TrendingUp, Users } from 'lucide-react';
+import { DollarSign } from 'lucide-react';
 
 export default function CommissionPage() {
   const { data: session } = useSession();
+  const [reps, setReps] = useState<any[]>([]);
   const [org, setOrg] = useState<any>(null);
-  const [weeklyData, setWeeklyData] = useState<any[]>([]);
-  const [teamData, setTeamData] = useState<any[]>([]);
-  const isManager = session?.user?.role === 'admin' || session?.user?.role === 'manager';
 
   useEffect(() => {
+    fetch('/api/metrics/team').then(r => r.json()).then(d => setReps(Array.isArray(d) ? d : []));
     fetch('/api/organization').then(r => r.json()).then(setOrg);
-    fetch('/api/metrics/weekly?weeks=12').then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setWeeklyData(data);
-    });
-    if (isManager) {
-      fetch('/api/metrics/team').then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setTeamData(data);
-      });
-    }
-  }, [isManager]);
+  }, []);
 
-  const commissionPct = org?.settings?.commissionPct || 25;
+  const commPct = org?.settings?.commissionPct || 25;
   const baseSalary = org?.settings?.baseSalary || 4000;
-  const podThreshold = org?.settings?.podThreshold || 4000;
-  const weeklySalary = baseSalary / 4;
-
-  // Trailing 12-week GP
-  const totalGP12 = weeklyData.reduce((s, w) => s + (w.grossProfit || 0), 0);
-  const trailing12Avg = weeklyData.length ? Math.round(totalGP12 / weeklyData.length) : 0;
-
-  // This week
-  const thisWeekGP = weeklyData.length ? weeklyData[weeklyData.length - 1]?.grossProfit || 0 : 0;
-  const thisWeekCommission = Math.max(0, thisWeekGP * (commissionPct / 100) - weeklySalary);
-  const gpToCoverSalary = Math.ceil(weeklySalary / (commissionPct / 100));
-  const salaryPct = Math.min(100, (thisWeekGP / gpToCoverSalary) * 100);
-
-  // Monthly totals
-  const last4Weeks = weeklyData.slice(-4);
-  const monthGP = last4Weeks.reduce((s, w) => s + (w.grossProfit || 0), 0);
-  const monthCommission = Math.max(0, monthGP * (commissionPct / 100) - baseSalary);
-
-  // Pod eligibility
-  const isPodEligible = trailing12Avg >= podThreshold;
+  const threshold = org?.settings?.commissionThreshold || 4000;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold flex items-center gap-2"><DollarSign className="h-6 w-6" /> Commission & Pods</h1>
-
-      {/* Commission Calculator */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">GP to Cover Salary</p>
-            <p className="text-3xl font-bold">${gpToCoverSalary.toLocaleString()}<span className="text-lg">/wk</span></p>
-            <p className="text-xs text-muted-foreground mt-1">At {commissionPct}% commission, ${baseSalary}/mo salary</p>
-            <Progress value={salaryPct} className="mt-3" />
-            <p className="text-xs mt-1 text-muted-foreground">
-              {salaryPct >= 100 ? 'Salary covered! Earning commission.' : `${Math.round(salaryPct)}% to salary coverage`}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">This Week</p>
-            <p className="text-3xl font-bold">${thisWeekGP.toLocaleString()} <span className="text-lg">GP</span></p>
-            <p className="text-sm text-green-600 font-medium mt-1">
-              Commission: ${thisWeekCommission.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">This Month</p>
-            <p className="text-3xl font-bold">${monthGP.toLocaleString()} <span className="text-lg">GP</span></p>
-            <p className="text-sm text-green-600 font-medium mt-1">
-              Commission: ${monthCommission.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex items-center gap-3">
+        <DollarSign className="h-6 w-6" />
+        <h1 className="text-2xl font-bold">Commission Tracking</h1>
       </div>
 
-      {/* Weekly Breakdown */}
       <Card>
-        <CardHeader><CardTitle className="text-lg">12-Week GP History</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-1 h-40">
-            {weeklyData.map((w: any, i: number) => {
-              const maxGP = Math.max(...weeklyData.map((x: any) => x.grossProfit || 0), 1);
-              const height = ((w.grossProfit || 0) / maxGP) * 100;
-              const isAboveThreshold = (w.grossProfit || 0) >= gpToCoverSalary;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div
-                    className={`w-full rounded-t ${isAboveThreshold ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
-                    style={{ height: `${Math.max(height, 2)}%` }}
-                    title={`$${(w.grossProfit || 0).toLocaleString()}`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-            <span>12 weeks ago</span>
-            <span>This week</span>
-          </div>
-          <div className="mt-3 flex items-center gap-4 text-sm">
-            <span>Trailing 12-week avg: <strong>${trailing12Avg.toLocaleString()}/wk</strong></span>
-            <Badge variant={isPodEligible ? 'default' : 'secondary'}>
-              {isPodEligible ? 'Pod Eligible' : 'Not Pod Eligible'}
-            </Badge>
-          </div>
+        <CardContent className="pt-4 text-sm space-y-1">
+          <p>Commission rate: <strong>{commPct}%</strong></p>
+          <p>Base salary: <strong>${baseSalary.toLocaleString()}/mo</strong></p>
+          <p>Threshold: Need <strong>${threshold.toLocaleString()}/wk GP</strong> to cover salary before commission kicks in</p>
+          <p className="text-xs text-muted-foreground mt-2">At {commPct}% commission, ${threshold}/wk GP = ${Math.round(threshold * commPct / 100)}/wk earned</p>
         </CardContent>
       </Card>
 
-      {/* Pod Eligibility (manager view) */}
-      {isManager && teamData.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Pod Eligibility (Team)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {teamData.map((rep: any) => {
-                const eligible = rep.trailing12WeekAvg >= podThreshold;
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Per-Rep Commission</CardTitle></CardHeader>
+        <CardContent>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="pb-2 font-medium">Rep</th>
+                <th className="pb-2 font-medium text-right">GP This Month</th>
+                <th className="pb-2 font-medium text-right">GP This Week</th>
+                <th className="pb-2 font-medium text-center">To Threshold</th>
+                <th className="pb-2 font-medium text-right">Commission Earned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reps.map(r => {
+                const weeklyGP = r.gpThisWeek || 0;
+                const aboveThreshold = Math.max(0, weeklyGP - threshold);
+                const commission = aboveThreshold * commPct / 100;
+                const pctToThreshold = Math.min(100, (weeklyGP / threshold) * 100);
                 return (
-                  <div key={rep._id} className="flex items-center justify-between p-3 rounded-lg border">
-                    <div>
-                      <p className="font-medium text-sm">{rep.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        12-wk avg: ${rep.trailing12WeekAvg?.toLocaleString()}/wk
-                      </p>
-                    </div>
-                    <Badge variant={eligible ? 'default' : 'secondary'}>
-                      {eligible ? 'Pod Eligible' : `$${(podThreshold - rep.trailing12WeekAvg).toLocaleString()} to go`}
-                    </Badge>
-                  </div>
+                  <tr key={r._id} className="border-b">
+                    <td className="py-3 font-medium">{r.name}</td>
+                    <td className="py-3 text-right">${(r.gpThisMonth || 0).toLocaleString()}</td>
+                    <td className="py-3 text-right">${weeklyGP.toLocaleString()}</td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-secondary rounded-full h-2">
+                          <div
+                            className={`rounded-full h-2 ${pctToThreshold >= 100 ? 'bg-green-500' : 'bg-orange-400'}`}
+                            style={{ width: `${pctToThreshold}%` }}
+                          />
+                        </div>
+                        <span className="text-xs">{Math.round(pctToThreshold)}%</span>
+                      </div>
+                    </td>
+                    <td className="py-3 text-right font-medium text-green-600">
+                      {commission > 0 ? `$${commission.toLocaleString()}` : '—'}
+                    </td>
+                  </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Phone & Email Integration</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <div className="text-center">
+              <p className="text-lg font-medium">Coming Soon</p>
+              <p className="text-sm">VoIP integration (RingCentral, Aircall, Dialpad) and email sync (Gmail, Outlook) will be available in V2.</p>
+              <p className="text-sm mt-1">For now, log calls and emails manually from the company page.</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

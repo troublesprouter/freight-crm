@@ -25,7 +25,6 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           role: user.role,
           organizationId: user.organizationId.toString(),
-          stage: user.stage,
         };
       },
     }),
@@ -38,7 +37,6 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role;
         token.organizationId = (user as any).organizationId;
         token.userId = (user as any).id;
-        token.stage = (user as any).stage;
       }
       return token;
     },
@@ -47,7 +45,6 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).organizationId = token.organizationId;
         (session.user as any).id = token.userId;
-        (session.user as any).stage = token.stage;
       }
       return session;
     },

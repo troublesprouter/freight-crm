@@ -1,58 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateContent } from '@/lib/gemini';
-import dbConnect from '@/lib/mongodb';
-import Company from '@/lib/models/Company';
+import { gemini } from '@/lib/gemini';
 import { requireSession } from '@/lib/session';
 
-// POST /api/ai/lead-intelligence — auto-fill company info from name
 export async function POST(req: NextRequest) {
+  await requireSession();
+  const { companyName } = await req.json();
+  if (!companyName) return NextResponse.json({ error: 'companyName required' }, { status: 400 });
+
   try {
-    const session = await requireSession();
-    const { companyId, companyName } = await req.json();
+    const response = await gemini.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{
+        role: 'user',
+        parts: [{ text: `You are a freight brokerage research assistant. Given the company name "${companyName}", provide a brief summary of what you know about this company in the context of freight/logistics. Include estimated info about: what they ship (commodities), equipment types likely needed, geography/regions they operate in, estimated shipping volume, and any other relevant logistics info. If you can't find specific info, make reasonable guesses based on the company name and industry. Format as JSON with fields: commodityTypes (array), equipmentTypes (array), geography (array), weeklyTruckloadVolume (string like "10-20"), notes (string with general info).` }]
+      }],
+    });
 
-    const prompt = `You are a freight brokerage research assistant. Given the company name "${companyName}", find and return the following information in JSON format only (no markdown, no explanation):
-{
-  "address": "full address if found",
-  "website": "company website URL",
-  "industry": "industry/sector",
-  "estimatedSize": "small/medium/large",
-  "description": "one sentence description",
-  "possibleLanes": ["lane1", "lane2"],
-  "possibleCommodities": ["commodity1"],
-  "possibleEquipment": ["Dry Van", "Reefer", etc]
-}
-Return only valid JSON. If you can't find info, use empty strings/arrays.`;
-
-    const result = await generateContent(prompt);
-
-    // Parse the JSON from the response
-    let parsed: any = {};
-    try {
-      const jsonMatch = result.match(/\{[\s\S]*\}/);
-      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      return NextResponse.json({ raw: result, error: 'Could not parse AI response' });
+    const text = response.text || '';
+    // Try to parse JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const data = JSON.parse(jsonMatch[0]);
+        return NextResponse.json(data);
+      } catch {
+        return NextResponse.json({ notes: text });
+      }
     }
-
-    // If companyId provided, update the company
-    if (companyId) {
-      await dbConnect();
-      await Company.findOneAndUpdate(
-        { _id: companyId, organizationId: session.user.organizationId },
-        {
-          $set: {
-            address: parsed.address || undefined,
-            website: parsed.website || undefined,
-            industry: parsed.industry || undefined,
-            'qualification.lanes': parsed.possibleLanes || [],
-            'qualification.commodities': parsed.possibleCommodities || [],
-            'qualification.equipmentTypes': parsed.possibleEquipment || [],
-          },
-        }
-      );
-    }
-
-    return NextResponse.json(parsed);
+    return NextResponse.json({ notes: text });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

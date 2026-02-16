@@ -1,13 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IStageConfig {
-  stageName: string;
-  stageNumber: number;
-  durationWeeks: number;
-  metrics: string[];
-  targets: Record<string, number>;
-}
-
 export interface IOrganization extends Document {
   name: string;
   settings: {
@@ -15,20 +7,22 @@ export interface IOrganization extends Document {
     cooldownDays: number;
     commissionPct: number;
     baseSalary: number;
-    podThreshold: number;
-    stageConfigs: IStageConfig[];
+    commissionThreshold: number;
+    supportStaffCost: number;
+    trailingAvgWeeks: number;
+    inactiveWarningDays: number;
+    inactiveAutoMoveDays: number;
+    benchmarks: {
+      month: number;
+      callsPerDay: number;
+      talkTimeMinutes: number;
+      monthlyGP: number;
+      weeklyGP: number;
+    }[];
   };
   inviteCode: string;
   createdAt: Date;
 }
-
-const StageConfigSchema = new Schema<IStageConfig>({
-  stageName: { type: String, required: true },
-  stageNumber: { type: Number, required: true },
-  durationWeeks: { type: Number, required: true },
-  metrics: [String],
-  targets: { type: Schema.Types.Mixed, default: {} },
-}, { _id: false });
 
 const OrganizationSchema = new Schema<IOrganization>({
   name: { type: String, required: true },
@@ -37,15 +31,28 @@ const OrganizationSchema = new Schema<IOrganization>({
     cooldownDays: { type: Number, default: 7 },
     commissionPct: { type: Number, default: 25 },
     baseSalary: { type: Number, default: 4000 },
-    podThreshold: { type: Number, default: 4000 },
-    stageConfigs: {
-      type: [StageConfigSchema],
+    commissionThreshold: { type: Number, default: 4000 },
+    supportStaffCost: { type: Number, default: 1000 },
+    trailingAvgWeeks: { type: Number, default: 12 },
+    inactiveWarningDays: { type: Number, default: 30 },
+    inactiveAutoMoveDays: { type: Number, default: 60 },
+    benchmarks: {
+      type: [{
+        month: Number,
+        callsPerDay: Number,
+        talkTimeMinutes: Number,
+        monthlyGP: Number,
+        weeklyGP: Number,
+      }],
       default: [
-        { stageName: 'Training', stageNumber: 1, durationWeeks: 12, metrics: ['attendance', 'trainingCompletion', 'loadsCovered'], targets: {} },
-        { stageName: 'Activity Only', stageNumber: 2, durationWeeks: 4, metrics: ['callCount'], targets: { dailyCalls: 100, weeklyCalls: 400 } },
-        { stageName: 'Activity + Talk Time', stageNumber: 3, durationWeeks: 4, metrics: ['callCount', 'talkTime'], targets: { dailyCalls: 100, weeklyCalls: 400, dailyTalkTimeMinutes: 45 } },
-        { stageName: 'Activity + Talk Time + Revenue', stageNumber: 4, durationWeeks: 8, metrics: ['callCount', 'talkTime', 'grossProfit'], targets: { dailyCalls: 100, monthlyGP: 2500 } },
-        { stageName: 'Graduated', stageNumber: 5, durationWeeks: 0, metrics: ['grossProfit'], targets: { weeklyGP: 4000 } },
+        { month: 1, callsPerDay: 100, talkTimeMinutes: 0, monthlyGP: 0, weeklyGP: 0 },
+        { month: 2, callsPerDay: 100, talkTimeMinutes: 30, monthlyGP: 0, weeklyGP: 0 },
+        { month: 3, callsPerDay: 100, talkTimeMinutes: 45, monthlyGP: 0, weeklyGP: 0 },
+        { month: 4, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 1200, weeklyGP: 0 },
+        { month: 5, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 1200, weeklyGP: 0 },
+        { month: 6, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 2500, weeklyGP: 0 },
+        { month: 7, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 2500, weeklyGP: 0 },
+        { month: 8, callsPerDay: 0, talkTimeMinutes: 0, monthlyGP: 0, weeklyGP: 4000 },
       ],
     },
   },

@@ -3,135 +3,87 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { TrendingUp, DollarSign, Users, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { TrendingUp } from 'lucide-react';
 
-const stageNames: Record<number, string> = {
-  1: 'Training', 2: 'Activity Only', 3: 'Activity + Talk Time', 4: 'Activity + TT + Rev', 5: 'Graduated',
-};
-
-export default function HiringROIPage() {
-  const [data, setData] = useState<any>({ reps: [], classes: {} });
+export default function ROIPage() {
+  const [reps, setReps] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/metrics/roi').then(r => r.json()).then(setData);
+    fetch('/api/metrics/roi').then(r => r.json()).then(d => setReps(Array.isArray(d) ? d : []));
   }, []);
 
-  const totalInvested = data.reps?.reduce((s: number, r: any) => s + r.totalSalaryPaid, 0) || 0;
-  const totalReturned = data.reps?.reduce((s: number, r: any) => s + r.totalGP, 0) || 0;
-  const totalNet = totalReturned - totalInvested;
+  const totalInvested = reps.reduce((s, r) => s + r.totalSalaryPaid, 0);
+  const totalReturned = reps.reduce((s, r) => s + r.totalGP, 0);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><TrendingUp className="h-6 w-6" /> Hiring ROI</h1>
-        <p className="text-sm text-muted-foreground">Track your investment in reps and their return</p>
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <TrendingUp className="h-6 w-6" />
+        <h1 className="text-2xl font-bold">Hiring ROI</h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-3 gap-4">
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total Invested</p>
-            <p className="text-3xl font-bold">${totalInvested.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">Salaries paid to date</p>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground">Total Invested</div>
+            <div className="text-2xl font-bold text-red-600">${totalInvested.toLocaleString()}</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total GP Generated</p>
-            <p className="text-3xl font-bold text-green-600">${totalReturned.toLocaleString()}</p>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground">Total GP Returned</div>
+            <div className="text-2xl font-bold text-green-600">${totalReturned.toLocaleString()}</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Net P&L</p>
-            <p className={`text-3xl font-bold ${totalNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {totalNet >= 0 ? '+' : ''}${totalNet.toLocaleString()}
-            </p>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground">Net P&L</div>
+            <div className={`text-2xl font-bold ${totalReturned - totalInvested >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ${(totalReturned - totalInvested).toLocaleString()}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Per-rep table */}
       <Card>
-        <CardHeader><CardTitle className="text-lg">Per-Rep Investment</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rep</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>Months</TableHead>
-                <TableHead className="text-right">Salary Paid</TableHead>
-                <TableHead className="text-right">GP Generated</TableHead>
-                <TableHead className="text-right">Net P&L</TableHead>
-                <TableHead className="text-right">Monthly GP</TableHead>
-                <TableHead className="text-right">Break-even</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(data.reps || []).map((rep: any) => (
-                <TableRow key={rep._id}>
-                  <TableCell>
-                    <Link href={`/manager/rep/${rep._id}`} className="font-medium hover:underline">{rep.name}</Link>
-                    <p className="text-xs text-muted-foreground">{rep.isActive ? '' : '(inactive)'}</p>
-                  </TableCell>
-                  <TableCell><Badge variant="secondary">{stageNames[rep.stage]}</Badge></TableCell>
-                  <TableCell>{rep.monthsSinceHire}</TableCell>
-                  <TableCell className="text-right">${rep.totalSalaryPaid.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-green-600">${rep.totalGP.toLocaleString()}</TableCell>
-                  <TableCell className={`text-right font-medium ${rep.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {rep.netPL >= 0 ? '+' : ''}${rep.netPL.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-right">${rep.monthlyGP.toLocaleString()}/mo</TableCell>
-                  <TableCell className="text-right">
-                    {rep.breakEvenMonths ? `~${rep.breakEvenMonths}mo` : 'N/A'}
-                  </TableCell>
-                </TableRow>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Per-Rep P&L</CardTitle></CardHeader>
+        <CardContent>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="pb-2 font-medium">Rep</th>
+                <th className="pb-2 font-medium">Hired</th>
+                <th className="pb-2 font-medium">Months</th>
+                <th className="pb-2 font-medium text-right">Salary Paid</th>
+                <th className="pb-2 font-medium text-right">GP Generated</th>
+                <th className="pb-2 font-medium text-right">Net P&L</th>
+                <th className="pb-2 font-medium text-center">Break-even</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reps.map(r => (
+                <tr key={r._id} className="border-b">
+                  <td className="py-2 font-medium">{r.name}</td>
+                  <td className="py-2 text-muted-foreground">{new Date(r.hireDate).toLocaleDateString()}</td>
+                  <td className="py-2">{r.monthsEmployed}</td>
+                  <td className="py-2 text-right text-red-600">${r.totalSalaryPaid.toLocaleString()}</td>
+                  <td className="py-2 text-right text-green-600">${r.totalGP.toLocaleString()}</td>
+                  <td className={`py-2 text-right font-medium ${r.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${r.netPL.toLocaleString()}
+                  </td>
+                  <td className="py-2 text-center">
+                    {r.breakEvenMonths ? (
+                      <Badge variant={r.breakEvenMonths <= r.monthsEmployed ? 'default' : 'outline'}>
+                        ~{r.breakEvenMonths}mo
+                      </Badge>
+                    ) : '—'}
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </CardContent>
       </Card>
-
-      {/* Cohort view */}
-      {Object.keys(data.classes || {}).length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Training Classes</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            {Object.entries(data.classes || {}).map(([className, reps]: [string, any]) => {
-              const active = reps.filter((r: any) => r.isActive).length;
-              const totalInv = reps.reduce((s: number, r: any) => s + r.totalSalaryPaid, 0);
-              const totalRet = reps.reduce((s: number, r: any) => s + r.totalGP, 0);
-              return (
-                <div key={className} className="p-4 rounded-lg border">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium">{className}</h3>
-                    <Badge variant="secondary">{active}/{reps.length} active</Badge>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Invested</p>
-                      <p className="font-medium">${totalInv.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Returned</p>
-                      <p className="font-medium text-green-600">${totalRet.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Net</p>
-                      <p className={`font-medium ${totalRet - totalInv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {totalRet - totalInv >= 0 ? '+' : ''}${(totalRet - totalInv).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
