@@ -98,7 +98,10 @@ export default function Sidebar() {
             <p className="text-xs text-muted-foreground capitalize">{session?.user?.role}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => signOut({ callbackUrl: '/login' })}>
+        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => {
+          sessionStorage.setItem('freight-crm-logout', '1');
+          signOut({ callbackUrl: '/login' });
+        }}>
           <LogOut className="h-4 w-4 mr-2" />
           Sign out
         </Button>
